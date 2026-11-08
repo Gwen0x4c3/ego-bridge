@@ -29,7 +29,7 @@ import threading
 import time
 from pathlib import Path
 
-BRIDGE_VERSION = "2.2.0"
+BRIDGE_VERSION = "2.3.0"
 
 # ----------------------------- 常量 / 策略 -----------------------------
 

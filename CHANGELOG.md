@@ -1,5 +1,13 @@
 # Changelog
 
+## [2.3.0] - 2026-11-09
+
+- No-build Release installer for Mac App/CLI and Linux CLI/service, with SHA-256 checks.
+- Automatic platform/CPU selection, safe command replacement and preserved pairing.
+- Homebrew cask/formula in `gwen0x4c3/homebrew-tap`, including runtime dependencies.
+- Mac App discovers Homebrew's versioned Python runtime.
+- README and Agent skill prefer prebuilt installation; source builds remain for development.
+
 ## [2.2.0] - 2026-11-09
 
 First public release.
@@ -14,3 +22,5 @@ First public release.
 - Documented, locally verified per-page/per-invocation Extra headers support.
 
 [2.2.0]: https://github.com/gwen0x4c3/ego-bridge/releases/tag/v2.2.0
+
+[2.3.0]: https://github.com/gwen0x4c3/ego-bridge/releases/tag/v2.3.0

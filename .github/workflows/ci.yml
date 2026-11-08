@@ -20,7 +20,7 @@ jobs:
       - name: Unit and local control tests
         run: python -m unittest discover -s tests -p 'test_*.py' -v
       - name: Shell syntax
-        run: bash -n mac/install.sh mac/install-cli.sh mac/EgoBridgeApp/build-app.sh linux/install.sh scripts/package-release.sh tests/e2e_loopback_v2.sh
+        run: bash -n install.sh mac/install.sh mac/install-cli.sh mac/EgoBridgeApp/build-app.sh linux/install.sh scripts/package-release.sh tests/e2e_loopback_v2.sh
       - name: Build and verify macOS App
         if: runner.os == 'macOS'
         run: |

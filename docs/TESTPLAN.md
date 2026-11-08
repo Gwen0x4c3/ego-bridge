@@ -14,6 +14,10 @@ The 12 core/activity tests cover timeout-safe framing, heartbeat/lost-peer detec
 shared local control, credential-free status, persistence, command completion,
 stale dial rejection, socket ownership and read-only activity parsing.
 CI runs these on Linux and macOS, then builds and verifies the Mac App.
+Three additional Release-installer tests use a local HTTP fixture to verify download
+hash rejection, installation/reinstallation with paths containing spaces, pairing
+preservation and refusal to overwrite unrelated commands. They need no browser.
+The Homebrew tap separately tests cask/formula installation on macOS and Linux.
 
 ## Browser-dependent local E2E
 

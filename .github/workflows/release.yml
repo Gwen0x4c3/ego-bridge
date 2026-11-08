@@ -74,8 +74,10 @@ jobs:
       - name: Assemble checksums and publish
         run: |
           cd dist/release
+          cp ../../install.sh install.sh
+          sha256sum install.sh > install.sh.sha256
           cat *.sha256 > SHA256SUMS
           sha256sum --check SHA256SUMS
           cd ../..
-          gh release create "$RELEASE_TAG" dist/release/*.zip dist/release/*.tar.gz dist/release/SHA256SUMS \
+          gh release create "$RELEASE_TAG" dist/release/*.zip dist/release/*.tar.gz dist/release/install.sh dist/release/SHA256SUMS \
             --verify-tag --title "ego bridge $RELEASE_TAG" --notes-file "docs/releases/$RELEASE_TAG.md"

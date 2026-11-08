@@ -37,55 +37,70 @@ AI agent → ego-browser shim → TLS service ←──── EgoBridge.app
 
 ## For you
 
-### 1. Prepare the Mac
+### 1. Mac：一条命令安装 App + CLI
 
-需要 **macOS 13+、Python 3.9+**，以及单独安装并完成首次引导的官方 **ego-lite**。
-确认官方 `ego-browser` CLI 可用；本项目不分发浏览器本体。
+先安装官方 **ego-lite** 并完成首次引导。桥接 App 支持 macOS 13+；本项目不分发浏览器本体。
+
+推荐 **Homebrew**，会同时安装 App、`ego-bridge` CLI 和 Python，**不需要自己 build**：
 
 ```bash
-export PATH="$HOME/.local/bin:$PATH"
-ego-browser --version
+brew install --cask gwen0x4c3/tap/ego-bridge
+open -a EgoBridge
 ```
 
-推荐从源码安装，需要 Xcode Command Line Tools：
+没有 Homebrew，但已有可用的 Python 3.9+ 时，可以自动下载、校验并安装预编译 Release：
 
 ```bash
-git clone --branch v2.2.0 --depth 1 https://github.com/gwen0x4c3/ego-bridge.git
-cd ego-bridge
-bash mac/install.sh
+curl -fsSL https://github.com/gwen0x4c3/ego-bridge/releases/latest/download/install.sh | bash
 ```
 
-脚本构建并安装到 `~/Applications/EgoBridge.app`，安装 Mac 控制命令到
-`~/.local/bin/ego-bridge`，然后打开 App。配对前显示“未配对”是正常的。
+脚本自动选择 Apple Silicon / Intel，安装到 `~/Applications/EgoBridge.app` 和
+`~/.local/bin/ego-bridge`，然后打开 App。不需要 Git、Node.js、Swift 或 Xcode。
+也可直接在 [Releases](https://github.com/gwen0x4c3/ego-bridge/releases/latest) 下载 App ZIP。
 
-也可以从 [Releases](https://github.com/gwen0x4c3/ego-bridge/releases/latest) 下载匹配 CPU 的
-`macos-arm64.zip` 或 `macos-x86_64.zip`，解压后将 App 放到 `~/Applications` 并打开。
-Release 为临时签名，尚未做 Developer ID 签名或公证；若系统阻止打开，可使用上述源码构建。
-下载版的控制 CLI 位于 App 的 `Contents/Resources/ego-bridge`，可直接执行，或链接：
+升级或从源码版迁移前，先退出正在运行的旧 App。若 `command -v ego-bridge` 仍指向旧
+源码目录，移除那个旧链接或调整 PATH，避免它遮住 Homebrew 的命令。配对资料保存在 App
+外，不会随安装包替换而清除。当前 App 为临时签名、尚未公证，首次打开可能需要你在
+macOS 中确认；安装器不会关闭 Gatekeeper。
 
-```bash
-mkdir -p "$HOME/.local/bin"
-ln -s "$HOME/Applications/EgoBridge.app/Contents/Resources/ego-bridge" "$HOME/.local/bin/ego-bridge"
-```
+### 2. Linux：一条命令安装 CLI + 服务
 
-### 2. Prepare the Linux devbox
-
-需要 **Python 3.7+、OpenSSL、Bash**；托管服务使用 systemd user service。
-Mac 必须能访问这台机器的 TCP 3325 端口。Linux 不需要安装浏览器。
+有 Python 3.7+、OpenSSL、Bash 和 curl 的 Linux，可以直接安装 Release 并启动 systemd
+用户服务；**不需要源码仓库或本地浏览器**：
 
 ```bash
-mkdir -p "$HOME/.local/share/ego-bridge"
-git clone --branch v2.2.0 --depth 1 https://github.com/gwen0x4c3/ego-bridge.git \
-  "$HOME/.local/share/ego-bridge/source"
-cd "$HOME/.local/share/ego-bridge/source"
-bash linux/install.sh --service
+curl -fsSL https://github.com/gwen0x4c3/ego-bridge/releases/latest/download/install.sh | bash
 export PATH="$HOME/.local/bin:$PATH"
 ego-browser pair
 ```
 
-保留这个源码目录：服务启动器指向其中的 Python 文件。没有 systemd 时，可先运行
-`bash linux/install.sh`，再在独立终端/进程管理器中启动 `ego-agent-service`。
-安装器会拒绝覆盖无关的 `ego-browser`；不要在 Mac 上运行 Linux 安装器。
+没有 systemd 用户会话时，脚本会给出 `ego-agent-service` 手动启动命令。安装器保留已有
+配对，只替换本项目的命令，拒绝覆盖无关的 `ego-browser`。
+
+如果 Linux 已经使用 Homebrew，也可以让它处理 Python/OpenSSL 依赖和服务：
+
+```bash
+brew install gwen0x4c3/tap/ego-bridge-agent
+brew services start gwen0x4c3/tap/ego-bridge-agent
+ego-browser pair
+```
+
+选择一种服务管理方式即可，不要同时用 Homebrew 和独立安装器启动两份服务。
+Mac 必须能访问这台 Linux 的 TCP 3325 端口。
+
+### 安装版本与更新
+
+两端共用同一个安装脚本，自动识别平台。固定版本、指定目录或只安装而不启动：
+
+```bash
+curl -fsSL https://github.com/gwen0x4c3/ego-bridge/releases/download/v2.3.0/install.sh \
+  | bash -s -- --version v2.3.0 --no-start
+# 高级选项：--prefix /absolute/path（CLI/runtime），EGO_BRIDGE_APP_DIR（Mac App 目录）
+```
+
+Homebrew 更新使用 `brew update` / `brew upgrade`；独立安装器重新运行上述 latest 命令。
+Homebrew 定义在 [gwen0x4c3/homebrew-tap](https://github.com/gwen0x4c3/homebrew-tap)，每六小时
+自动同步新 Release，也可手动触发 Sync 工作流。
 
 ### 3. Pair once
 
@@ -126,7 +141,7 @@ npx skills add gwen0x4c3/ego-bridge --skill ego-bridge
 固定当前发布版本：
 
 ```bash
-npx skills add gwen0x4c3/ego-bridge@v2.2.0 --skill ego-bridge
+npx skills add gwen0x4c3/ego-bridge@v2.3.0 --skill ego-bridge
 ```
 
 [skills CLI](https://github.com/vercel-labs/skills) 默认安装到当前项目；加 `-g` 全局安装，
@@ -170,6 +185,8 @@ JS
 - [贡献与发布流程](CONTRIBUTING.md)
 - [更新记录](CHANGELOG.md)
 - [GitHub Releases](https://github.com/gwen0x4c3/ego-bridge/releases)
+
+源码构建只面向开发：`bash mac/install.sh`。普通安装请使用上面的 Homebrew / Release 入口。
 
 `VERSION` 是发布版本号。推送匹配的 `vX.Y.Z` tag 后，Release workflow 运行测试、构建
 Apple Silicon / Intel App 和 Linux 安装包，并发布 SHA-256 校验和。

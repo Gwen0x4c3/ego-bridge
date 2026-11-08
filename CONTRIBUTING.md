@@ -28,7 +28,15 @@ For a new release:
 
 6. The Release workflow tests/builds native Apple Silicon and Intel Apps, packages the
    Linux runtime, checks the tag against VERSION and publishes all archives plus SHA256SUMS.
-   Follow the workflow to completion and verify the downloadable assets.
+   Follow the workflow to completion and verify the downloadable assets, including `install.sh`.
+7. Trigger Homebrew synchronization (or wait for its six-hour schedule):
+
+   ```bash
+   gh workflow run sync.yml -R gwen0x4c3/homebrew-tap
+   ```
+
+   The tap tests real Mac/Linux installations. Its own repository token updates the
+   tap; the application repository does not store a cross-repository access token.
 
 Local packaging:
 

@@ -93,7 +93,9 @@ final class CoreProcess: ObservableObject {
     func start() {
         guard proc == nil else { return }
         guard let url = Bundle.main.url(forResource: "bridge_core", withExtension: "py"),
-              let py = ["/usr/local/bin/python3", "/opt/homebrew/bin/python3", "/usr/bin/python3"]
+              let py = ["/opt/homebrew/opt/python@3.13/bin/python3.13",
+                        "/usr/local/opt/python@3.13/bin/python3.13",
+                        "/usr/local/bin/python3", "/opt/homebrew/bin/python3", "/usr/bin/python3"]
                 .first(where: { FileManager.default.isExecutableFile(atPath: $0) }) else {
             coreMissing = true
             status.state = "error"

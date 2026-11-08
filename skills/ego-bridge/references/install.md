@@ -1,90 +1,97 @@
-# Install and verify the complete bridge
+# Install and verify the complete bridge without building
 
 Repository: https://github.com/gwen0x4c3/ego-bridge
-Release: https://github.com/gwen0x4c3/ego-bridge/releases/tag/v2.2.0
+Release: https://github.com/gwen0x4c3/ego-bridge/releases/tag/v2.3.0
+Homebrew: https://github.com/gwen0x4c3/homebrew-tap
 
-The `npx skills add` command only copies this skill. Complete the runtime steps
-below on the relevant machines; do not end a setup task after installing the skill.
-
-## Obtain source in a stable location
-
-Run separately on each machine that needs the runtime. Reuse an existing verified
-checkout rather than overwriting it. For a new checkout:
-
-```bash
-mkdir -p "$HOME/.local/share/ego-bridge"
-git clone --branch v2.2.0 --depth 1 https://github.com/gwen0x4c3/ego-bridge.git \
-  "$HOME/.local/share/ego-bridge/source"
-cd "$HOME/.local/share/ego-bridge/source"
-```
-
-The source is independent of the installed skill directory. Keep the Linux checkout:
-its installed service launcher points to `linux/ego_agent_service.py` there.
+Installing this skill only copies instructions. Complete runtime installation and
+pairing before declaring setup complete. Normal setup needs no source checkout,
+Swift compiler, Xcode, or external Node runtime.
 
 ## Mac role
 
-Prerequisites: macOS 13+, Python 3.9+, Xcode Command Line Tools for source builds,
-and the official ego-lite application with onboarding completed.
-The proprietary browser is a separate prerequisite; this repository does not bundle it.
-If the user's official ego-browser skill is installed, use its installation workflow;
-otherwise have the user install ego-lite from its official distribution and finish onboarding.
-Do not use an unofficial browser download or copy a Linux shim onto the Mac.
+Install the official ego-lite browser separately and finish onboarding. Never replace
+the Mac's official `ego-browser` command with the Linux shim.
+
+If Homebrew is already available, prefer its cask: it installs the prebuilt App,
+the `ego-bridge` control CLI and Python dependency together.
 
 ```bash
-export PATH="$HOME/.local/bin:$PATH"
-command -v ego-browser
-ego-browser --version
-cd "$HOME/.local/share/ego-bridge/source"
-bash mac/install.sh
-command -v ego-bridge
+brew install --cask gwen0x4c3/tap/ego-bridge
+open -a EgoBridge
 ego-bridge --json status
 ```
 
-`mac/install.sh` builds the App, installs it to `~/Applications/EgoBridge.app`, installs
-the `ego-bridge` CLI in `~/.local/bin`, and opens the App. Before pairing, an unpaired
-status is expected. Existing pairing is stored outside the App and survives upgrades.
+Otherwise, with working Python 3.9+, install the matching prebuilt Release:
 
-If building is unavailable, the Release has native macOS archives for each CPU
-architecture. Extract the matching App into `~/Applications`, open it, then run its
-`Contents/Resources/ego-bridge` CLI directly, or link that file to `~/.local/bin/ego-bridge`.
-Release Apps are ad-hoc signed, not Developer ID signed or notarized; source builds
-are the recommended alternative when macOS blocks a downloaded App.
+```bash
+curl -fsSL https://github.com/gwen0x4c3/ego-bridge/releases/download/v2.3.0/install.sh \
+  | bash -s -- --version v2.3.0
+export PATH="$HOME/.local/bin:$PATH"
+ego-bridge --json status
+```
+
+The installer detects the CPU, verifies SHA-256 and App identity/signature/version,
+installs into `~/Applications` and `~/.local/bin`, then opens the App. It does not
+build or clear credentials. The App is ad-hoc signed, not notarized; the user may
+need to approve its first launch through normal macOS controls. Do not disable
+Gatekeeper or silently route around an OS security prompt.
+
+For an upgrade, quit the old App first. With `--no-start`, install without opening it.
+When migrating from source, check `command -v ego-bridge`: an older `~/.local/bin`
+link can shadow Homebrew's command. Do not remove unrelated commands.
 
 ## Linux role
 
-Prerequisites: Python 3.7+, OpenSSL, Bash; systemd user services for managed startup.
-The default TCP port is 3325 and must be reachable from the Mac.
+With Python 3.7+, OpenSSL, Bash and curl:
 
 ```bash
-cd "$HOME/.local/share/ego-bridge/source"
-bash linux/install.sh --service
+curl -fsSL https://github.com/gwen0x4c3/ego-bridge/releases/download/v2.3.0/install.sh \
+  | bash -s -- --version v2.3.0
 export PATH="$HOME/.local/bin:$PATH"
-systemctl --user status ego-bridge --no-pager
 ego-browser pair
 ```
 
-The installer refuses to overwrite an unrelated `ego-browser`. Do not use `--force`
-unless the user deliberately wants to replace that executable. Do not install the
-Mac browser on Linux. Without systemd, run `ego-agent-service` in a separately
-managed terminal/process, then continue pairing.
+The prebuilt runtime is kept in `~/.local/share/ego-bridge/releases`, with a current
+symlink and CLI launchers in `~/.local/bin`. No checkout or local browser is required.
+A systemd user session is enabled/restarted when available; otherwise start the
+printed `ego-agent-service` command in the user's existing process manager.
+
+If Linux already has Homebrew, its formula installs dependencies too:
+
+```bash
+brew install gwen0x4c3/tap/ego-bridge-agent
+brew services start gwen0x4c3/tap/ego-bridge-agent
+ego-browser pair
+```
+
+Use either Homebrew services or the standalone systemd unit, not both. The default
+port is TCP 3325, reachable from the Mac. Installer `--prefix /absolute/path` chooses
+another CLI/runtime prefix; `--no-start` installs without starting a service.
 
 ## Pair and verify
 
 1. Linux: `ego-browser pair` creates a single-use code valid for five minutes.
-2. Mac: fill the host, port and code in the App, or run:
+2. Mac: enter the Linux host, port and code in the App, or run:
 
    ```bash
    ego-bridge connect --host DEVBOX_HOST --port 3325 --code-stdin
    ```
 
-   Supply the fresh code through stdin. If this agent has no authorized Mac access,
-   give the user the concrete Mac command/form values and wait for that step.
+   Supply the code through stdin; keep it out of logs. If this agent has no authorized
+   Mac access, give the user concrete form/command values and wait for that step.
 3. Mac: `ego-bridge --json status` must report `state: connected`.
 4. Linux: `ego-browser bridge status`, `ego-browser --version`, then
-   `ego-browser skill` (read through its end marker).
-5. For an authorized browser smoke test, create one TaskSpace, visit example.com,
-   print its title, and finish the space with `{keep: []}`. Report actual results.
+   `ego-browser skill` (read through the end marker).
+5. For an authorized smoke test, create one TaskSpace, visit example.com, print its
+   title, then `task.finish({keep: []})`. Report actual results.
 
-Never mark setup complete merely because the skill is discoverable. If one endpoint
-is unavailable, finish independent installation work and name the remaining endpoint
+Never mark setup complete merely because the skill is discoverable. If an endpoint
+is unavailable, finish independent installation work and name the missing endpoint
 and verification step without claiming an end-to-end connection.
+
+## Development-only source build
+
+Only when the user is developing/customizing the App, clone the repository and run
+`bash mac/install.sh` with Xcode Command Line Tools. Linux source installs can use
+`bash linux/install.sh --service`; keep that checkout because its service references it.

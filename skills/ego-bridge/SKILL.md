@@ -4,7 +4,7 @@ description: Install, pair, diagnose, and operate ego bridge so Linux or remote 
 license: MIT
 metadata:
   author: gwen0x4c3
-  version: "2.2.0"
+  version: "2.3.0"
 ---
 
 # Ego Bridge
@@ -18,10 +18,10 @@ on the Mac; the Mac initiates the TLS connection to the Linux service.
 Linux service, command shims, Python, or ego-lite.** When asked to set up ego bridge,
 complete the relevant runtime installation and pairing before reporting success.
 
-Read [references/install.md](references/install.md) for the complete installation.
-Do not assume this skill's installed directory contains the source repository. Obtain
-`https://github.com/gwen0x4c3/ego-bridge`, preferably tag `v2.2.0`, in a stable directory.
-The Linux launcher depends on that source remaining in place.
+Read [references/install.md](references/install.md) for installation. Prefer Homebrew
+on a Mac with Homebrew, or the prebuilt Release installer on either platform. Do not
+require a user to clone or build the repository for normal setup. Source builds are
+only a development fallback. The installed skill directory is not the runtime.
 
 Determine the machine's role before changing it:
 
