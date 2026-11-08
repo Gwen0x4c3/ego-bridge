@@ -23,6 +23,8 @@ curl -fsSL https://raw.githubusercontent.com/gwen0x4c3/ego-bridge/main/install.s
 
 不用自己 build。Mac 需要官方 ego-lite 和 Python 3.9+；Linux 需要 Python 3.7+ 和 OpenSSL。Linux 不能访问 GitHub 时，也可以由 Mac 下载后通过 SSH 传过去安装。
 
+只装 App？[下载 DMG](https://github.com/gwen0x4c3/ego-bridge/releases/latest)，把 ego bridge 拖到 Applications 即可。
+
 以后随时继续配置：
 
 ```bash

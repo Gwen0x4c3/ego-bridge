@@ -39,7 +39,7 @@ import sys
 import uuid
 from pathlib import Path
 
-SHIM_VERSION = "2.4.0"
+SHIM_VERSION = "2.4.1"
 CONF_PATH = Path(os.environ.get("EGO_BRIDGE_CONFIG",
                                 "~/.config/ego-bridge/shim.json")).expanduser()
 DEFAULT_PORT = 3325

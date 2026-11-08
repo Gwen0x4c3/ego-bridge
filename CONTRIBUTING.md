@@ -26,8 +26,8 @@ For a new release:
    git push origin vX.Y.Z
    ```
 
-6. The Release workflow tests/builds native Apple Silicon and Intel Apps, packages the
-   Linux runtime, checks the tag against VERSION and publishes all archives plus SHA256SUMS.
+6. The Release workflow tests/builds native Apple Silicon and Intel Apps as ZIP and DMG,
+   packages the Linux runtime, checks the tag against VERSION and publishes all archives plus SHA256SUMS.
    Follow the workflow to completion and verify the downloadable assets, including `install.sh`.
 7. Trigger Homebrew synchronization (or wait for its six-hour schedule):
 
@@ -46,6 +46,10 @@ bash scripts/package-release.sh linux
 ```
 
 The Mac build includes this project's Python resources and MIT license, not ego-lite.
+DMG packaging uses built-in `hdiutil`, with an Applications shortcut and installation
+instructions. Packaging verifies the image, mounts it read-only, checks the bundled
+App signature/version and Applications shortcut, then detaches it before publishing.
+Public-repository standard GitHub Actions runners and this packaging require no paid service.
 Keep Developer ID signing/notarization status explicit; current builds use ad-hoc signing.
 
 ## Repository hygiene

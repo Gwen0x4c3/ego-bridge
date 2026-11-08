@@ -50,6 +50,18 @@ For authorized noninteractive Agent setup, name the destination explicitly:
 ego-bridge setup --yes --host YOUR_SSH_ALIAS --bridge-host YOUR_LINUX_ADDRESS
 ```
 
+## DMG: Mac App only
+
+Download the `.dmg` for **arm64** (Apple Silicon) or **x86_64** (Intel) from
+[Releases](https://github.com/gwen0x4c3/ego-bridge/releases/latest). Open it, drag
+`EgoBridge.app` to `Applications`, then launch it from Applications and eject the image.
+The Python and official ego-lite requirements above still apply. For the CLI and
+guided Linux setup, use the one-command installer or Homebrew instead.
+
+DMGs are built and verified automatically for each release. They contain the same
+ad-hoc signed App as the ZIP; they are not notarized. No Apple Developer subscription
+is needed to build them. First launch may require approval in macOS System Settings.
+
 ## Homebrew
 
 Mac App + control CLI + Python dependency:
@@ -85,7 +97,7 @@ Verify Mac `ego-bridge --json status` and Linux `ego-browser bridge status`.
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/gwen0x4c3/ego-bridge/main/install.sh \
-  | bash -s -- --version v2.4.0 --no-start --non-interactive
+  | bash -s -- --version v2.4.1 --no-start --non-interactive
 ```
 
 - `--version vX.Y.Z`: pin the Release.

@@ -1,5 +1,11 @@
 # Changelog
 
+## [2.4.1] - 2026-11-09
+
+- Automatically publish native Apple Silicon and Intel DMGs alongside existing ZIPs.
+- Drag-to-Applications installation with bilingual instructions and SHA-256 checksums.
+- Verify image integrity and the mounted App signature/version on CI before publishing.
+
 ## [2.4.0] - 2026-11-09
 
 - Interactive one-command setup on Mac: arrow-key SSH host selection or manual user@host.
@@ -34,3 +40,5 @@ First public release.
 [2.3.0]: https://github.com/gwen0x4c3/ego-bridge/releases/tag/v2.3.0
 
 [2.4.0]: https://github.com/gwen0x4c3/ego-bridge/releases/tag/v2.4.0
+
+[2.4.1]: https://github.com/gwen0x4c3/ego-bridge/releases/tag/v2.4.1

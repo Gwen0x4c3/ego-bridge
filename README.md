@@ -23,6 +23,8 @@ curl -fsSL https://raw.githubusercontent.com/gwen0x4c3/ego-bridge/main/install.s
 
 No build required. Mac needs the official [ego-lite](docs/INSTALL.md#requirements) browser and Python 3.9+; Linux needs Python 3.7+ and OpenSSL. Linux can be installed over SSH even when it cannot reach GitHub.
 
+App only? [Download the DMG](https://github.com/gwen0x4c3/ego-bridge/releases/latest) and drag ego bridge to Applications.
+
 Resume setup at any time:
 
 ```bash

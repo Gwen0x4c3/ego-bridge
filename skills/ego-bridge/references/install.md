@@ -11,7 +11,7 @@ separately installed official ego-lite browser; Linux requires Python 3.7+ / Ope
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/gwen0x4c3/ego-bridge/main/install.sh \
-  | bash -s -- --version v2.4.0
+  | bash -s -- --version v2.4.1
 ```
 
 The installer detects macOS/Linux and verifies Release hashes. Mac gets the App and

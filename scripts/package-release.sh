@@ -24,6 +24,8 @@ case "${1:-}" in
     codesign --verify --deep --strict "$ROOT/dist/EgoBridge.app"
     NAME="ego-bridge-$TAG-macos-$(uname -m).zip"
     ditto -c -k --sequesterRsrc --keepParent "$ROOT/dist/EgoBridge.app" "$OUT/$NAME"
+    DMG_NAME="ego-bridge-$TAG-macos-$(uname -m).dmg"
+    bash "$ROOT/scripts/build-dmg.sh" "$ROOT/dist/EgoBridge.app" "$OUT/$DMG_NAME"
     ;;
   linux)
     NAME="ego-bridge-$TAG-linux.tar.gz"
@@ -34,4 +36,8 @@ case "${1:-}" in
 esac
 cd "$OUT"
 shasum -a 256 "$NAME" > "$NAME.sha256"
+if [[ -n ${DMG_NAME:-} ]]; then
+  shasum -a 256 "$DMG_NAME" > "$DMG_NAME.sha256"
+  echo "$OUT/$DMG_NAME"
+fi
 echo "$OUT/$NAME"

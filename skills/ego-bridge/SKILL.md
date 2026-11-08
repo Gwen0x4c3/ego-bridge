@@ -4,7 +4,7 @@ description: Install, pair, diagnose, and operate ego bridge so Linux or remote 
 license: MIT
 metadata:
   author: gwen0x4c3
-  version: "2.4.0"
+  version: "2.4.1"
 ---
 
 # Ego Bridge

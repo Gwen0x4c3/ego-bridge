@@ -7,13 +7,15 @@ requires macOS 13+ with Xcode Command Line Tools. The Linux service supports Pyt
 
 ```bash
 python3 -m unittest discover -s tests -p 'test_*.py' -v
-bash -n mac/install.sh mac/install-cli.sh mac/EgoBridgeApp/build-app.sh linux/install.sh scripts/package-release.sh
+bash -n mac/install.sh mac/install-cli.sh mac/EgoBridgeApp/build-app.sh linux/install.sh scripts/build-dmg.sh scripts/package-release.sh
 ```
 
 The 12 core/activity tests cover timeout-safe framing, heartbeat/lost-peer detection,
 shared local control, credential-free status, persistence, command completion,
 stale dial rejection, socket ownership and read-only activity parsing.
-CI runs these on Linux and macOS, then builds and verifies the Mac App.
+CI runs these on Linux and macOS, then builds the Mac App, ZIP and DMG. DMG packaging
+verifies image integrity and mounts it read-only to check the App signature, version,
+Applications shortcut and installation instructions; the image is then detached.
 Four additional Release-installer tests use a local HTTP fixture to verify download
 hash rejection, installation/reinstallation with paths containing spaces, pairing
 preservation, offline startup/custom ports and refusal to overwrite unrelated commands. They need no browser.

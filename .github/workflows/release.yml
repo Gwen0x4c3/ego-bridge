@@ -79,5 +79,5 @@ jobs:
           cat *.sha256 > SHA256SUMS
           sha256sum --check SHA256SUMS
           cd ../..
-          gh release create "$RELEASE_TAG" dist/release/*.zip dist/release/*.tar.gz dist/release/install.sh dist/release/SHA256SUMS \
+          gh release create "$RELEASE_TAG" dist/release/*.dmg dist/release/*.zip dist/release/*.tar.gz dist/release/install.sh dist/release/SHA256SUMS \
             --verify-tag --title "ego bridge $RELEASE_TAG" --notes-file "docs/releases/$RELEASE_TAG.md"
