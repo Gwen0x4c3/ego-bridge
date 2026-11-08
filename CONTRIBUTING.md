@@ -13,7 +13,8 @@ The initial public release is 2.2.0; earlier prototype numbers are not published
 
 For a new release:
 
-1. Update `VERSION`, `BRIDGE_VERSION` in `mac/ego_bridge_common.py`, and skill metadata.
+1. Update `VERSION`, `BRIDGE_VERSION` in `mac/ego_bridge_common.py`, `SERVICE_VERSION`
+   in `linux/ego_agent_service.py`, `SHIM_VERSION` in `linux/ego-browser`, and skill metadata.
 2. Update installation/version examples, `CHANGELOG.md`, and `docs/releases/vX.Y.Z.md`.
 3. Run tests, build/signature verification, and any affected native or browser checks.
 4. Commit on `main`; let CI pass.

@@ -5,6 +5,13 @@ ROOT=$(cd "$(dirname "$0")/.." && pwd)
 VERSION=$(tr -d '[:space:]' < "$ROOT/VERSION")
 [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "Invalid VERSION" >&2; exit 1; }
 TAG="v$VERSION"
+for component in "mac/ego_bridge_common.py:BRIDGE_VERSION" "linux/ego_agent_service.py:SERVICE_VERSION" "linux/ego-browser:SHIM_VERSION"; do
+  path="${component%:*}"
+  constant="${component##*:}"
+  grep -Fxq "$constant = \"$VERSION\"" "$ROOT/$path" || {
+    echo "$constant in $path does not match VERSION" >&2; exit 1;
+  }
+done
 if [[ -n ${RELEASE_TAG:-} && "$RELEASE_TAG" != "$TAG" ]]; then
   echo "Release tag $RELEASE_TAG does not match VERSION $TAG" >&2; exit 1
 fi

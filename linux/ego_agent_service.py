@@ -33,7 +33,7 @@ import time
 import uuid
 from pathlib import Path
 
-SERVICE_VERSION = "2.0.0"
+SERVICE_VERSION = "2.2.0"
 CONF_DIR = Path(os.environ.get("EGO_AGENT_CONF",
                                "~/.config/ego-bridge/server")).expanduser()
 PAIR_TTL = 300.0
