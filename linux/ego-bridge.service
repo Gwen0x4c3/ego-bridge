@@ -1,0 +1,16 @@
+[Unit]
+Description=ego-bridge agent service (ego-browser remote bridge)
+Documentation=https://github.com/gwen0x4c3/ego-bridge
+After=network.target
+
+[Service]
+Type=simple
+ExecStart=%h/.local/bin/ego-agent-service
+Restart=on-failure
+RestartSec=3
+# 日志仅生命周期事件，不含脚本正文/页面内容/截图
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=default.target

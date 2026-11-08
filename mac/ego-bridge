@@ -1,0 +1,110 @@
+#!/usr/bin/env python3
+"""Control the running Mac menu-bar App. No second connection or credential store."""
+import argparse
+import json
+import os
+from pathlib import Path
+import socket
+import subprocess
+import sys
+import time
+
+CONTROL_SOCKET = os.environ.get("EGO_BRIDGE_CONTROL_SOCKET", os.path.expanduser(
+    "~/Library/Application Support/ego-bridge/control.sock"))
+
+
+def request(command):
+    with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as conn:
+        conn.settimeout(30)
+        conn.connect(CONTROL_SOCKET)
+        conn.sendall(json.dumps(command).encode() + b"\n")
+        with conn.makefile("rb") as f:
+            return json.loads(f.readline(1024 * 1024))
+
+
+def ensure_app():
+    try:
+        request({"cmd": "status"})
+        return
+    except (OSError, ValueError):
+        pass
+    source_app = Path(__file__).resolve().parent.parent / "dist/EgoBridge.app"
+    bundled_app = Path(__file__).resolve().parents[2]
+    app = source_app if source_app.exists() else bundled_app
+    if app.suffix != ".app" or not app.exists():
+        raise ValueError("找不到 EgoBridge.app；请先运行 mac/EgoBridgeApp/build-app.sh")
+    subprocess.run(["open", str(app)], check=True, capture_output=True)
+    deadline = time.monotonic() + 12
+    while time.monotonic() < deadline:
+        try:
+            request({"cmd": "status"})
+            return
+        except (OSError, ValueError):
+            time.sleep(.15)
+    raise ValueError("App 核心未就绪，请查看 ~/Library/Logs/ego-bridge-core.log")
+
+
+def main():
+    parser = argparse.ArgumentParser(description="Mac ego bridge 控制（与状态栏实时同步）")
+    parser.add_argument("--json", action="store_true", help="输出 JSON，供 Agent 使用")
+    sub = parser.add_subparsers(dest="command", required=True)
+    sub.add_parser("status", help="查看当前状态")
+    connect = sub.add_parser("connect", help="配对并连接；已配对时可省略全部参数")
+    connect.add_argument("--host")
+    connect.add_argument("--port", type=int, default=3325)
+    codes = connect.add_mutually_exclusive_group()
+    codes.add_argument("--code", help="Linux ego-browser pair 生成的一次性配对码")
+    codes.add_argument("--code-stdin", action="store_true", help="从 stdin 读配对码")
+    configure = sub.add_parser("configure", help="更新地址并保留配对；继续校验原证书")
+    configure.add_argument("--host", required=True)
+    configure.add_argument("--port", type=int, default=3325)
+    sub.add_parser("disconnect", help="关闭远端控制并保留配对")
+    sub.add_parser("unpair", help="删除配对；在线时通知远端撤销凭证")
+    args = parser.parse_args()
+    command = {"cmd": {"connect": "start", "disconnect": "stop"}.get(
+        args.command, args.command)}
+    if args.command == "connect":
+        code = sys.stdin.readline().strip() if args.code_stdin else args.code
+        if code:
+            if not args.host:
+                parser.error("配对时需要 --host")
+            command.update(cmd="pair", host=args.host, port=args.port, code=code)
+        elif args.host:
+            parser.error("修改已有地址请用 configure；首次连接请提供 --code / --code-stdin")
+    elif args.command == "configure":
+        command.update(host=args.host, port=args.port)
+    try:
+        # status never launches the App; mutations bring up its one shared core.
+        if args.command != "status":
+            ensure_app()
+        reply = request(command)
+        if reply.get("ok") and args.command == "connect":
+            deadline = time.monotonic() + 18
+            while reply["status"]["state"] != "connected":
+                if not reply["status"]["enabled"] or time.monotonic() > deadline:
+                    reply["ok"] = False
+                    reply["error"] = reply["status"]["detail"]
+                    break
+                time.sleep(.2)
+                reply = request({"cmd": "status"})
+        if args.json:
+            print(json.dumps(reply, ensure_ascii=False))
+        else:
+            status = reply["status"]
+            print("{} · {}".format(status["state"], status["detail"]))
+            if status.get("host"):
+                print("{}:{}".format(status["host"], status["port"]))
+            if reply.get("error"):
+                print(reply["error"], file=sys.stderr)
+        return 0 if reply.get("ok") else 1
+    except (OSError, ValueError, subprocess.SubprocessError) as e:
+        error = "App 未运行或控制通道不可用：{}".format(e)
+        if args.json:
+            print(json.dumps({"ok": False, "error": error}, ensure_ascii=False))
+        else:
+            print(error, file=sys.stderr)
+        return 1
+
+
+if __name__ == "__main__":
+    sys.exit(main())

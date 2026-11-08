@@ -1,0 +1,4 @@
+interface:
+  display_name: "Ego Bridge"
+  short_description: "Install and operate the Mac-to-devbox browser bridge"
+  default_prompt: "Use $ego-bridge to install, configure, or operate the remote browser bridge."

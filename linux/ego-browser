@@ -1,0 +1,445 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+# ego-bridge shim（Linux 侧，v2）—— 本文件是 ego-bridge 的一部分
+"""
+Linux devbox 上的 ego-browser 兼容命令（v2：连接方向反转）。
+
+本地常驻服务 ego_agent_service.py 监听 :3325（TLS）；本机 shim 连 127.0.0.1。
+Mac 上的 ego bridge App 主动连接本服务（上行链路），run 请求经其转发到 Mac 执行。
+
+用法与官方 CLI 对齐（不变）：
+  ego-browser skill / --version / help [topic] / --ego-server-name=<name>
+  ego-browser nodejs -e '<script>' / nodejs <<'EOF' ... EOF / pipe
+
+配对与诊断（发给本地服务，不执行任何东西）：
+  ego-browser pair                    # 生成 xxxx-xxxx 一次性配对码（5 分钟有效）
+  ego-browser bridge status           # 服务/上行链路/Mac 健康一览
+  ego-browser bridge result <id>      # 断链后查询原请求结果
+  ego-browser bridge new-session      # 轮换会话目录
+
+行为契约（同 v1）：
+  stdout/stderr/退出码原样透传（官方 CLI 的 console 输出走 stderr）；
+  传输失败/超时绝不自动重试，打印 requestId 与查询命令，结果未知时明确说明；
+  截图/saveAs 请写 /tmp/ego-bridge/<session>/ 下绝对路径，运行后自动回传到本机同路径；
+  上传、交互 REPL、import/upgrade 明确不支持。
+
+配置 ~/.config/ego-bridge/shim.json：{"port":3325,"session":"s-…"}
+环境变量：EGO_BRIDGE_PORT / EGO_BRIDGE_SESSION / EGO_BRIDGE_TIMEOUT_MS(默认180000)
+         EGO_BRIDGE_HINTS=0 关闭提示行 / EGO_BRIDGE_MIRROR(默认 /tmp/ego-bridge)
+"""
+
+import base64
+import hashlib
+import json
+import os
+import re
+import socket
+import ssl
+import sys
+import uuid
+from pathlib import Path
+
+SHIM_VERSION = "2.0.0"
+CONF_PATH = Path(os.environ.get("EGO_BRIDGE_CONFIG",
+                                "~/.config/ego-bridge/shim.json")).expanduser()
+DEFAULT_PORT = 3325
+DEFAULT_TIMEOUT_MS = 180_000
+EXIT_TIMEOUT = 124
+EXIT_TRANSPORT = 125
+EXIT_USAGE = 2
+HINT_PREFIX = "[ego-bridge]"
+SNIFF_TAIL = 16384
+
+
+class ShimError(Exception):
+    def __init__(self, code, message):
+        super().__init__(message)
+        self.code = code
+        self.message = message
+
+
+def hint(msg):
+    print(f"{HINT_PREFIX} {msg}", file=sys.stderr)
+
+
+def log_debug(msg):
+    if os.environ.get("EGO_BRIDGE_DEBUG"):
+        hint(msg)
+
+
+# ----------------------------- 配置 -----------------------------
+
+def load_config():
+    cfg = {}
+    if CONF_PATH.exists():
+        try:
+            cfg = json.loads(CONF_PATH.read_text())
+        except Exception as e:  # noqa: BLE001
+            raise ShimError(EXIT_USAGE, f"配置文件损坏 {CONF_PATH}: {e}")
+    port = int(os.environ.get("EGO_BRIDGE_PORT") or cfg.get("port") or DEFAULT_PORT)
+    session = (os.environ.get("EGO_BRIDGE_SESSION")
+               or cfg.get("session") or f"s-{uuid.uuid4().hex[:12]}")
+    # 会话首次出现时写回，保持跨调用稳定
+    if cfg.get("session") != session or cfg.get("port") != port:
+        try:
+            save_config(port, session)
+        except OSError:
+            pass
+    return {"port": port, "session": session}
+
+
+def save_config(port, session):
+    CONF_PATH.parent.mkdir(parents=True, exist_ok=True)
+    CONF_PATH.write_text(json.dumps({"port": port, "session": session}, indent=2) + "\n")
+    os.chmod(CONF_PATH, 0o600)
+
+
+# ----------------------------- 本地服务连接 -----------------------------
+
+def service_connect(port, timeout=30):
+    """连接本机服务（TLS，回环免验证——同用户信任域）。"""
+    ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
+    ctx.check_hostname = False
+    ctx.verify_mode = ssl.CERT_NONE
+    for attempt in (1, 2):
+        try:
+            raw = socket.create_connection(("127.0.0.1", port), timeout=timeout)
+            conn = ctx.wrap_socket(raw, server_hostname="localhost")
+            conn.sendall(b'{"op":"hello","mode":"local"}\n')
+            return conn
+        except (ConnectionRefusedError, FileNotFoundError):
+            if attempt == 1:
+                raise ShimError(EXIT_TRANSPORT,
+                                "连不上本机 ego_agent_service（127.0.0.1:%d）。"
+                                "请先启动：python3 ego_agent_service.py "
+                                "（或 systemctl --user start ego-bridge）" % port)
+            raise
+        except (socket.timeout, OSError) as e:
+            raise ShimError(EXIT_TRANSPORT, f"本机服务连接失败: {e.__class__.__name__}")
+
+
+def local_roundtrip(req, port, timeout=30):
+    """单请求单回复（status/pair_gen/result）。"""
+    conn = service_connect(port, timeout)
+    try:
+        conn.settimeout(timeout)
+        conn.sendall(json.dumps(req).encode() + b"\n")
+        f = conn.makefile("rb")
+        line = f.readline()
+        if not line:
+            raise ShimError(EXIT_TRANSPORT, "服务未回复（连接被关闭）")
+        return json.loads(line.decode("utf-8"))
+    finally:
+        try:
+            conn.close()
+        except Exception:  # noqa: BLE001
+            pass
+
+
+# ----------------------------- 参数解析（对齐官方 CLI，同 v1） -----------------------------
+
+def parse_forward_args(args):
+    """返回 (forward_argv, stdin_bytes 或 None, 子命令)。"""
+    if not args:
+        return ["--help"], None, "--help"
+
+    VALUE_FLAGS = {"-e", "--eval", "--sdk-path"}
+    sub = None
+    i = 0
+    while i < len(args):
+        a = args[i]
+        if a in VALUE_FLAGS:
+            i += 2
+            continue
+        if a.startswith("--ego-server-name=") or a.startswith("-"):
+            i += 1
+            continue
+        sub = a
+        break
+    if sub in ("import", "upgrade"):
+        raise ShimError(EXIT_USAGE,
+                        f"`{sub}` 会修改 Mac 本机状态，桥接明确不支持。"
+                        f"如需执行，请在 Mac 上手动运行。")
+
+    if sub == "nodejs":
+        tail = args[args.index(sub) + 1:]
+        has_eval = any(x in ("-e", "--eval") for x in tail)
+        if not has_eval:
+            if sys.stdin.isatty():
+                raise ShimError(EXIT_USAGE,
+                                "交互 REPL 不支持（桥接仅非交互调用）。"
+                                "请用 -e '<script>' 或 heredoc/stdin 提交脚本。")
+            return list(args), sys.stdin.buffer.read(), sub
+    return list(args), None, sub
+
+
+# ----------------------------- 转发执行 -----------------------------
+
+def run_forward(cfg, argv, stdin_bytes, sub=None):
+    request_id = uuid.uuid4().hex
+    timeout_ms = int(os.environ.get("EGO_BRIDGE_TIMEOUT_MS", DEFAULT_TIMEOUT_MS))
+    session = cfg["session"]
+    mirror_base = Path(os.environ.get("EGO_BRIDGE_MIRROR", "/tmp/ego-bridge"))
+
+    if sub == "nodejs" and os.environ.get("EGO_BRIDGE_HINTS", "1") != "0":
+        mac_dir = f"/tmp/ego-bridge/{session}"
+        hint(f"会话 {session}：Mac 工作目录 {mac_dir}/ —— screenshot({{path}})/saveAs "
+             f"请写该目录下的绝对路径，运行后自动回传到本机同路径")
+
+    out = sys.stdout.buffer
+    err = sys.stderr.buffer
+    err_tail = ""
+    files = []
+    mac_dir = f"/tmp/ego-bridge/{session}"
+    result = None
+
+    def fail_transport(desc):
+        err.flush(); out.flush()
+        hint(f"链路故障（{desc}）。requestId={request_id}")
+        hint("结果未知：请求可能已到达 Mac 并执行，也可能没有。不会自动重试。")
+        hint(f"查询: ego-browser bridge result {requestId}")
+        sys.exit(EXIT_TRANSPORT)
+
+    try:
+        conn = service_connect(cfg["port"], timeout=30)
+        conn.settimeout(max(90.0, timeout_ms / 1000.0 + 90.0))
+        conn.sendall(json.dumps({
+            "op": "run", "requestId": request_id, "sessionId": session,
+            "argv": argv,
+            "stdinB64": base64.b64encode(stdin_bytes or b"").decode("ascii"),
+            "timeoutMs": timeout_ms,
+        }).encode() + b"\n")
+        f = conn.makefile("rb")
+        for line in f:
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                ev = json.loads(line.decode("utf-8"))
+            except Exception:  # noqa: BLE001
+                continue
+            t = ev.get("t")
+            if t == "out":
+                data = base64.b64decode(ev.get("d", ""))
+                if ev.get("s") == "o":
+                    out.write(data)
+                else:
+                    err.write(data)
+                    err_tail = (err_tail + data.decode("utf-8", "replace"))[-SNIFF_TAIL:]
+            elif t in ("ping", "file_data"):
+                continue
+            elif t == "truncated":
+                hint(f"输出流 {ev.get('s')} 超过上限被截断")
+            elif t == "files":
+                files = ev.get("files", [])
+                mac_dir = ev.get("dir") or mac_dir
+            elif t == "error":
+                hint(f"桥接错误: {ev.get('message')} ({ev.get('code')})")
+                if ev.get("code") in ("no_uplink", "uplink_lost"):
+                    hint(f"结果未知（Mac 侧未连接/连接中断）。Mac 重连后可查询: "
+                         f"ego-browser bridge result {request_id}")
+                    sys.exit(EXIT_TRANSPORT)
+                sys.exit(EXIT_TRANSPORT)
+            elif t == "result":
+                result = ev
+                break
+        conn.close()
+    except ShimError:
+        raise
+    except (TimeoutError, ssl.SSLError, ConnectionError, OSError) as e:
+        fail_transport(e.__class__.__name__)
+
+    if result is None:
+        fail_transport("未收到 result 事件（连接中断）")
+
+    out.flush(); err.flush()
+
+    if result.get("replayed"):
+        hint(f"幂等重放：requestId={request_id} 此前已执行过，本次未重新运行")
+    if result.get("timedOut"):
+        hint(f"执行超时（{result.get('durationMs')}ms），已在 Mac 端终止。"
+             f"部分操作可能已生效，结果不确定；requestId={request_id}")
+    if result.get("aborted"):
+        hint("执行被中止（Mac 侧开关关闭或连接断开），结果未知；"
+             f"requestId={request_id}")
+
+    # ---- 截图/文件回传 ----
+    if files:
+        mirror_dir = Path(mac_dir)
+        try:
+            mirror_dir.mkdir(parents=True, exist_ok=True)
+            probe = mirror_dir / ".mirror-probe"
+            probe.write_bytes(b"")
+            probe.unlink()
+        except OSError:
+            mirror_dir = mirror_base / session
+            try:
+                mirror_dir.mkdir(parents=True, exist_ok=True)
+            except OSError:
+                mirror_dir = Path.home() / ".cache/ego-bridge/mirror" / session
+                mirror_dir.mkdir(parents=True, exist_ok=True)
+            hint(f"{mac_dir} 在本机不可写，回传改放 {mirror_dir}（与脚本路径不同，注意换算）")
+        ok_paths = []
+        for meta in files:
+            name = meta["name"]
+            try:
+                data = fetch_file(cfg["port"], session, name)
+                digest = hashlib.sha256(data).hexdigest()
+                if meta.get("sha256") and digest != meta["sha256"]:
+                    hint(f"回传校验失败（sha256 不一致）：{name}")
+                    continue
+                dest = mirror_dir / name
+                tmp = dest.with_suffix(dest.suffix + ".part")
+                tmp.write_bytes(data)
+                os.chmod(tmp, 0o600)
+                tmp.rename(dest)
+                ok_paths.append(str(dest))
+            except ShimError as e:
+                hint(f"回传失败 {name}: {e.message}")
+            except OSError as e:
+                hint(f"回传失败 {name}: {e}")
+        if ok_paths:
+            hint(f"已回传 {len(ok_paths)} 个文件（本机路径，可直接读取）: " +
+                 " ".join(ok_paths))
+
+    # ---- 官方 TaskSpace 接管语义提示（仅提示） ----
+    if ("EGO_TASK_SPACE_USER_IN_CONTROL" in err_tail
+            or "Control of this task space is with the user" in err_tail):
+        hint("用户已接管该 TaskSpace。官方语义：硬停止，不要重试、不要自动抢回。")
+        hint("等待用户明确确认继续后，再用 takeOverTaskSpace(spaceId) 恢复同一 Space。")
+    elif "EGO_TASK_SPACE_NAME_IN_USE" in err_tail:
+        hint("TaskSpace 名称被用户持有的空间占用（EGO_TASK_SPACE_NAME_IN_USE）。"
+             "询问用户是否在该空间工作（确认后 claimTaskSpace），或换个名称。")
+
+    exit_code = result.get("exitCode")
+    sys.exit(exit_code if exit_code is not None else EXIT_TIMEOUT)
+
+
+def fetch_file(port, session, name):
+    """经本地服务从 Mac 取文件（分块 file_data 事件）。"""
+    conn = service_connect(port, timeout=120)
+    try:
+        conn.settimeout(120)
+        conn.sendall(json.dumps({"op": "file_get", "session": session,
+                                 "name": name}).encode() + b"\n")
+        f = conn.makefile("rb")
+        buf = bytearray()
+        while True:
+            line = f.readline()
+            if not line:
+                raise ShimError(EXIT_TRANSPORT, f"文件 {name} 传输中断")
+            ev = json.loads(line.decode("utf-8"))
+            if ev.get("t") == "file_data":
+                buf.extend(base64.b64decode(ev.get("b64") or ""))
+                if ev.get("last"):
+                    return bytes(buf)
+            elif ev.get("t") == "error":
+                raise ShimError(EXIT_TRANSPORT,
+                                f"{ev.get('message')} ({ev.get('code')})")
+    finally:
+        try:
+            conn.close()
+        except Exception:  # noqa: BLE001
+            pass
+
+
+# ----------------------------- pair / bridge 子命令 -----------------------------
+
+def cmd_pair(cfg):
+    r = local_roundtrip({"op": "pair_gen"}, cfg["port"])
+    if not r.get("ok"):
+        raise ShimError(EXIT_TRANSPORT, f"生成配对码失败: {r}")
+    print("配对码: " + r["code"])
+    print(f"有效期: {r.get('expiresIn', 300)} 秒，一次性使用")
+    print("在 Mac 打开 ego bridge（菜单栏）→ 输入本机 hostname/IP、端口 %d 与该配对码"
+          % cfg["port"])
+
+
+def cmd_status(cfg):
+    r = local_roundtrip({"op": "status"}, cfg["port"], timeout=15)
+    print(f"本机服务 : 端口 {r.get('port')}（v{r.get('serviceVersion')}，"
+          f"已运行 {r.get('uptimeSec', 0)}s）")
+    print(f"上行链路 : " + ("已连接（Mac ego bridge 在线）" if r.get("uplink")
+                            else "未连接（Mac 未开启/未配对/断线）"))
+    print(f"配对状态 : " + ("已配对" if r.get("paired") else "未配对（运行 ego-browser pair）"))
+    mac = r.get("mac")
+    if mac:
+        cli = mac.get("cli", {})
+        print(f"Mac CLI  : {cli.get('cliVersionRaw', '?')}".replace("\n", " · "))
+        print(f"ego lite : " + ("运行中" if cli.get("appRunning") else "未运行"))
+        print(f"会话目录 : {mac.get('sessionsDir')}")
+        for w in cli.get("warnings", []):
+            hint(w)
+    elif r.get("uplink"):
+        print("Mac 健康 : （暂未取到）")
+
+
+def cmd_result(cfg, request_id):
+    if not request_id:
+        print("用法: ego-browser bridge result <requestId>", file=sys.stderr)
+        sys.exit(EXIT_USAGE)
+    r = local_roundtrip({"op": "result", "requestId": request_id}, cfg["port"], timeout=15)
+    print(json.dumps(r, ensure_ascii=False, indent=2))
+    if r.get("status") == "unknown":
+        hint("该请求结果未知（可能未到达 / 缓存过期 / Mac 重启）。"
+             "如需继续，请先用只读脚本确认页面当前状态，不要重复可能有副作用的操作。")
+        sys.exit(EXIT_TRANSPORT)
+    if r.get("status") == "running":
+        hint("仍在执行中，稍后再查。")
+        sys.exit(EXIT_TRANSPORT)
+    sys.exit(0)
+
+
+def cmd_new_session(cfg):
+    cfg2 = {"port": cfg["port"], "session": f"s-{uuid.uuid4().hex[:12]}"}
+    save_config(cfg2["port"], cfg2["session"])
+    print(f"新会话: {cfg2['session']}（Mac 工作目录 /tmp/ego-bridge/{cfg2['session']}/）")
+
+
+def bridge_main(args):
+    if not args or args[0] in ("help", "-h", "--help"):
+        print(__doc__)
+        sys.exit(0)
+    sub = args[0]
+    rest = args[1:]
+    cfg = load_config()
+    if sub == "pair":
+        cmd_pair(cfg)
+    elif sub == "status":
+        cmd_status(cfg)
+    elif sub == "result":
+        cmd_result(cfg, rest[0] if rest else "")
+    elif sub == "new-session":
+        cmd_new_session(cfg)
+    else:
+        print(f"未知 bridge 子命令: {sub}（可用: pair/status/result/new-session）",
+              file=sys.stderr)
+        sys.exit(EXIT_USAGE)
+
+
+# ----------------------------- 入口 -----------------------------
+
+def main():
+    args = sys.argv[1:]
+    if args and args[0] == "pair":
+        cmd_pair(load_config())
+        return
+    if args and args[0] == "bridge":
+        bridge_main(args[1:])
+        return
+    cfg = load_config()
+    argv, stdin_bytes, sub = parse_forward_args(args)
+    run_forward(cfg, argv, stdin_bytes, sub)
+
+
+if __name__ == "__main__":
+    try:
+        main()
+    except ShimError as e:
+        print(f"{HINT_PREFIX} {e.message}", file=sys.stderr)
+        sys.exit(e.code)
+    except KeyboardInterrupt:
+        print(f"{HINT_PREFIX} 已中断。若请求已发出，用 ego-browser bridge result "
+              f"<requestId> 查询结果（本次未打印 requestId 则请求未发出）。",
+              file=sys.stderr)
+        sys.exit(130)

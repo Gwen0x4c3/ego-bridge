@@ -1,0 +1,81 @@
+name: Release
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing release tag matching VERSION
+        required: true
+permissions:
+  contents: read
+jobs:
+  macos:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: macos-15
+            arch: arm64
+          - runner: macos-15-intel
+            arch: x86_64
+    runs-on: ${{ matrix.runner }}
+    env:
+      RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.tag || github.ref_name }}
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.11'
+      - run: python -m unittest discover -s tests -p 'test_*.py' -v
+      - name: Package native App
+        run: bash scripts/package-release.sh macos
+      - uses: actions/upload-artifact@v7
+        with:
+          name: macos-${{ matrix.arch }}
+          path: dist/release/*
+          if-no-files-found: error
+  linux:
+    runs-on: ubuntu-24.04
+    env:
+      RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.tag || github.ref_name }}
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.11'
+      - run: python -m unittest discover -s tests -p 'test_*.py' -v
+      - run: bash scripts/package-release.sh linux
+      - uses: actions/upload-artifact@v7
+        with:
+          name: linux
+          path: dist/release/*
+          if-no-files-found: error
+  publish:
+    needs: [macos, linux]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.tag || github.ref_name }}
+      - uses: actions/download-artifact@v8
+        with:
+          path: dist/release
+          merge-multiple: true
+      - name: Assemble checksums and publish
+        run: |
+          cd dist/release
+          cat *.sha256 > SHA256SUMS
+          sha256sum --check SHA256SUMS
+          cd ../..
+          gh release create "$RELEASE_TAG" dist/release/*.zip dist/release/*.tar.gz dist/release/SHA256SUMS \
+            --verify-tag --title "ego bridge $RELEASE_TAG" --notes-file "docs/releases/$RELEASE_TAG.md"

@@ -1,0 +1,12 @@
+.DS_Store
+__pycache__/
+*.py[cod]
+/dist/
+/artifacts/
+.env
+.env.*
+*.pem
+*.key
+/.agents/
+/.claude/
+/.codex/
