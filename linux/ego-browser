@@ -39,7 +39,7 @@ import sys
 import uuid
 from pathlib import Path
 
-SHIM_VERSION = "2.3.0"
+SHIM_VERSION = "2.4.0"
 CONF_PATH = Path(os.environ.get("EGO_BRIDGE_CONFIG",
                                 "~/.config/ego-bridge/shim.json")).expanduser()
 DEFAULT_PORT = 3325
@@ -345,18 +345,24 @@ def fetch_file(port, session, name):
 
 # ----------------------------- pair / bridge 子命令 -----------------------------
 
-def cmd_pair(cfg):
+def cmd_pair(cfg, json_output=False):
     r = local_roundtrip({"op": "pair_gen"}, cfg["port"])
     if not r.get("ok"):
         raise ShimError(EXIT_TRANSPORT, f"生成配对码失败: {r}")
+    if json_output:
+        print(json.dumps(r))
+        return
     print("配对码: " + r["code"])
     print(f"有效期: {r.get('expiresIn', 300)} 秒，一次性使用")
     print("在 Mac 打开 ego bridge（菜单栏）→ 输入本机 hostname/IP、端口 %d 与该配对码"
           % cfg["port"])
 
 
-def cmd_status(cfg):
+def cmd_status(cfg, json_output=False):
     r = local_roundtrip({"op": "status"}, cfg["port"], timeout=15)
+    if json_output:
+        print(json.dumps(r))
+        return
     print(f"本机服务 : 端口 {r.get('port')}（v{r.get('serviceVersion')}，"
           f"已运行 {r.get('uptimeSec', 0)}s）")
     print(f"上行链路 : " + ("已连接（Mac ego bridge 在线）" if r.get("uplink")
@@ -404,9 +410,9 @@ def bridge_main(args):
     rest = args[1:]
     cfg = load_config()
     if sub == "pair":
-        cmd_pair(cfg)
+        cmd_pair(cfg, json_output="--json" in rest)
     elif sub == "status":
-        cmd_status(cfg)
+        cmd_status(cfg, json_output="--json" in rest)
     elif sub == "result":
         cmd_result(cfg, rest[0] if rest else "")
     elif sub == "new-session":
@@ -422,7 +428,7 @@ def bridge_main(args):
 def main():
     args = sys.argv[1:]
     if args and args[0] == "pair":
-        cmd_pair(load_config())
+        cmd_pair(load_config(), json_output="--json" in args[1:])
         return
     if args and args[0] == "bridge":
         bridge_main(args[1:])

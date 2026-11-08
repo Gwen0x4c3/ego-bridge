@@ -14,9 +14,9 @@ The 12 core/activity tests cover timeout-safe framing, heartbeat/lost-peer detec
 shared local control, credential-free status, persistence, command completion,
 stale dial rejection, socket ownership and read-only activity parsing.
 CI runs these on Linux and macOS, then builds and verifies the Mac App.
-Three additional Release-installer tests use a local HTTP fixture to verify download
+Four additional Release-installer tests use a local HTTP fixture to verify download
 hash rejection, installation/reinstallation with paths containing spaces, pairing
-preservation and refusal to overwrite unrelated commands. They need no browser.
+preservation, offline startup/custom ports and refusal to overwrite unrelated commands. They need no browser.
 The Homebrew tap separately tests cask/formula installation on macOS and Linux.
 
 ## Browser-dependent local E2E
@@ -29,7 +29,7 @@ session/control/configuration files; it does not replace the active production p
 bash tests/e2e_loopback_v2.sh
 ```
 
-The 22 scenarios cover pairing, version/guide/script forwarding, 65-second idle
+The 23 scenarios cover JSON pairing/status, version/guide/script forwarding, 65-second idle
 keepalive, file return, blocked commands, timeout/result queries, Mac CLI state sync,
 pause/resume, reconnection, re-pairing and termination of active tasks.
 The service readiness wait avoids a first-start certificate-generation timing race.
@@ -76,3 +76,11 @@ A two-machine run verified pairing, remote CLI health, screenshot/file return an
 reconnection. Real activity observation and post-launch App signature checks passed.
 The latest icon and quit-hover styling were inspected by native rendering; their
 mouse interaction was not separately automated.
+
+## SSH setup wizard
+
+`tests/test_setup_wizard.py` tests alias/Include discovery, target validation,
+offline deployment command/transfer orchestration, stdin-only codes and two-ended
+connection checks. A real controlling pseudo-terminal tests arrow-key selection;
+SSH and Mac IPC are mocked in orchestration tests, not used to alter live pairing.
+The suite also checks that SSH cannot consume the curl pipeline's stdin.

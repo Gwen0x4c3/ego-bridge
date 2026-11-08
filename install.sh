@@ -3,14 +3,20 @@
 set -euo pipefail
 VERSION=latest
 START=1
+INTERACTIVE=1
+OFFLINE_DIR=''
+BRIDGE_PORT="${EGO_BRIDGE_PORT:-3325}"
 PREFIX="${EGO_BRIDGE_PREFIX:-$HOME/.local}"
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --version) VERSION="${2:?Missing version}"; shift 2 ;;
     --prefix) PREFIX="${2:?Missing prefix}"; shift 2 ;;
     --no-start) START=0; shift ;;
+    --non-interactive) INTERACTIVE=0; shift ;;
+    --from-dir) OFFLINE_DIR="${2:?Missing directory}"; shift 2 ;;
+    --port) BRIDGE_PORT="${2:?Missing port}"; shift 2 ;;
     --help|-h)
-      echo 'Usage: bash install.sh [--version vX.Y.Z] [--prefix DIR] [--no-start]'
+      echo 'Usage: bash install.sh [--version vX.Y.Z] [--prefix DIR] [--no-start] [--non-interactive] [--port N] [--from-dir DIR]'
       echo 'Installs Release binaries. Mac: App + ego-bridge. Linux: CLI + service.'
       exit 0 ;;
     *) echo "Unknown argument: $1" >&2; exit 2 ;;
@@ -19,6 +25,7 @@ done
 fail() { echo "ego bridge: $*" >&2; exit 1; }
 [[ "$VERSION" == latest || "$VERSION" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || fail 'Invalid version'
 [[ "$PREFIX" == /* ]] || fail '--prefix must be an absolute path'
+[[ "$BRIDGE_PORT" =~ ^[0-9]+$ ]] && (( 10#$BRIDGE_PORT >= 1 && 10#$BRIDGE_PORT <= 65535 )) || fail 'Invalid bridge port'
 OS=$(uname -s)
 case "$OS" in
   Darwin)
@@ -36,7 +43,8 @@ case "$OS" in
   Linux) SUFFIX=linux.tar.gz ;;
   *) fail 'Supported platforms: macOS and Linux' ;;
 esac
-for required in curl awk grep; do command -v "$required" >/dev/null || fail "Missing $required"; done
+for required in awk grep; do command -v "$required" >/dev/null || fail "Missing $required"; done
+[[ -n "$OFFLINE_DIR" ]] || command -v curl >/dev/null || fail 'Missing curl'
 PYTHON=''
 for candidate in /opt/homebrew/opt/python@3.13/bin/python3.13 /usr/local/opt/python@3.13/bin/python3.13 "$(command -v python3 || true)"; do
   if [[ -x "$candidate" ]] && "$candidate" -c 'import sys; sys.exit(sys.version_info < ((3,9) if sys.platform == "darwin" else (3,7)))' 2>/dev/null; then
@@ -49,7 +57,13 @@ BASE="${EGO_BRIDGE_RELEASE_BASE_URL:-https://github.com/gwen0x4c3/ego-bridge/rel
 if [[ "$VERSION" == latest ]]; then URL="$BASE/latest/download"; else URL="$BASE/download/$VERSION"; fi
 WORK=$(mktemp -d "${TMPDIR:-/tmp}/ego-bridge-install.XXXXXX")
 trap 'rm -rf "$WORK"' EXIT
-fetch() { curl --fail --location --silent --show-error --retry 3 --connect-timeout 15 --max-time 180 "$1" -o "$2"; }
+fetch() {
+  if [[ -n "$OFFLINE_DIR" ]]; then
+    cp "$OFFLINE_DIR/${1##*/}" "$2"
+  else
+    curl --fail --location --silent --show-error --retry 3 --connect-timeout 15 --max-time 180 "$1" -o "$2"
+  fi
+}
 fetch "$URL/SHA256SUMS" "$WORK/SHA256SUMS"
 ASSET=$(awk '{print $2}' "$WORK/SHA256SUMS" | grep -E "^ego-bridge-v[0-9]+\\.[0-9]+\\.[0-9]+-$SUFFIX$" || true)
 [[ -n "$ASSET" && "$ASSET" != *$'\n'* ]] || fail 'Release manifest has no unique matching asset'
@@ -101,6 +115,13 @@ if [[ "$OS" == Darwin ]]; then
   rm -rf "$STAGE"
   echo "Installed $RELEASE: $DEST and $BIN_DIR/ego-bridge"
   [[ $START == 0 ]] || open "$DEST"
+  if [[ $START == 1 && $INTERACTIVE == 1 && -f "$DEST/Contents/Resources/bridge_setup.py" ]]; then
+    if [[ -t 1 ]] && { : </dev/tty; } 2>/dev/null; then
+      "$PYTHON" "$DEST/Contents/Resources/bridge_setup.py" --version "$RELEASE" --cli "$BIN_DIR/ego-bridge"
+    else
+      echo "Continue SSH setup from a terminal: $BIN_DIR/ego-bridge setup"
+    fi
+  fi
 else
   check_command ego-browser 'ego-bridge shim'
   check_command ego-agent-service 'ego_agent_service.py|ego-bridge agent launcher'
@@ -121,17 +142,30 @@ else
   mv "$WORK/ego-agent-service" "$BIN_DIR/ego-agent-service"
   echo "Installed $RELEASE: $BIN_DIR/ego-browser and $BIN_DIR/ego-agent-service"
   if [[ $START == 1 ]]; then
+    "$PYTHON" -c 'import json,os,pathlib,sys; p=pathlib.Path(os.environ.get("EGO_BRIDGE_CONFIG",str(pathlib.Path.home()/".config/ego-bridge/shim.json"))); cfg=json.loads(p.read_text()) if p.exists() else {}; cfg["port"]=int(sys.argv[1]); p.parent.mkdir(parents=True,exist_ok=True); p.write_text(json.dumps(cfg)+"\n"); p.chmod(0o600)' "$BRIDGE_PORT"
     if command -v systemctl >/dev/null && systemctl --user show-environment >/dev/null 2>&1; then
       UNIT_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/systemd/user"
       mkdir -p "$UNIT_DIR"
-      "$PYTHON" -c 'import pathlib,sys; p=pathlib.Path(sys.argv[1]); text=p.read_text(); executable=sys.argv[2].replace("\\","\\\\").replace("\"","\\\"").replace("%","%%"); pathlib.Path(sys.argv[3]).write_text(text.replace("%h/.local/bin/ego-agent-service", "\""+executable+"\""))' "$RUNTIME/linux/ego-bridge.service" "$BIN_DIR/ego-agent-service" "$UNIT_DIR/ego-bridge.service"
+      "$PYTHON" -c 'import pathlib,sys; p=pathlib.Path(sys.argv[1]); text=p.read_text(); executable=sys.argv[2].replace("\\","\\\\").replace("\"","\\\"").replace("%","%%"); pathlib.Path(sys.argv[3]).write_text(text.replace("%h/.local/bin/ego-agent-service", "\""+executable+"\" --port "+sys.argv[4]))' "$RUNTIME/linux/ego-bridge.service" "$BIN_DIR/ego-agent-service" "$UNIT_DIR/ego-bridge.service" "$BRIDGE_PORT"
       systemctl --user daemon-reload
       systemctl --user enable ego-bridge
       systemctl --user restart ego-bridge
       echo "Service started. Next: $BIN_DIR/ego-browser pair"
     else
-      echo "No systemd user session. Start manually: $BIN_DIR/ego-agent-service"
+      if ! EGO_BRIDGE_PORT="$BRIDGE_PORT" "$BIN_DIR/ego-browser" bridge status --json >/dev/null 2>&1; then
+        mkdir -p "$DATA_DIR/run"
+        chmod 700 "$DATA_DIR/run"
+        nohup "$BIN_DIR/ego-agent-service" --port "$BRIDGE_PORT" >"$DATA_DIR/run/service.log" 2>&1 </dev/null &
+        echo "$!" > "$DATA_DIR/run/service.pid"
+        echo "Started background service. Log: $DATA_DIR/run/service.log"
+      fi
     fi
+    for attempt in {1..50}; do
+      if EGO_BRIDGE_PORT="$BRIDGE_PORT" "$BIN_DIR/ego-browser" bridge status --json >/dev/null 2>&1; then break; fi
+      sleep 0.2
+    done
+    EGO_BRIDGE_PORT="$BRIDGE_PORT" "$BIN_DIR/ego-browser" bridge status --json >/dev/null || fail 'Service is not ready'
+    echo "Linux is ready. Next: $BIN_DIR/ego-browser pair"
   fi
 fi
 case ":$PATH:" in *":$BIN_DIR:"*) ;; *) echo "Add to your shell configuration: export PATH=\"$BIN_DIR:\$PATH\"" ;; esac

@@ -45,9 +45,13 @@ def ensure_app():
 
 
 def main():
+    if len(sys.argv) > 1 and sys.argv[1] == "setup":
+        from bridge_setup import main as setup_main
+        return setup_main(sys.argv[2:])
     parser = argparse.ArgumentParser(description="Mac ego bridge 控制（与状态栏实时同步）")
     parser.add_argument("--json", action="store_true", help="输出 JSON，供 Agent 使用")
     sub = parser.add_subparsers(dest="command", required=True)
+    sub.add_parser("setup", help="选择 SSH 主机、安装 Linux 端并配对")
     sub.add_parser("status", help="查看当前状态")
     connect = sub.add_parser("connect", help="配对并连接；已配对时可省略全部参数")
     connect.add_argument("--host")

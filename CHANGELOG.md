@@ -1,5 +1,13 @@
 # Changelog
 
+## [2.4.0] - 2026-11-09
+
+- Interactive one-command setup on Mac: arrow-key SSH host selection or manual user@host.
+- Transfer verified Linux Release assets over SSH; remote GitHub access is not required.
+- Optional automatic pairing via CLI, with one-time codes kept in stdin and both endpoints checked.
+- Offline installation, configurable bridge port, and background startup when systemd is unavailable.
+- English / 中文 READMEs focused on installation and everyday use.
+
 ## [2.3.0] - 2026-11-09
 
 - No-build Release installer for Mac App/CLI and Linux CLI/service, with SHA-256 checks.
@@ -24,3 +32,5 @@ First public release.
 [2.2.0]: https://github.com/gwen0x4c3/ego-bridge/releases/tag/v2.2.0
 
 [2.3.0]: https://github.com/gwen0x4c3/ego-bridge/releases/tag/v2.3.0
+
+[2.4.0]: https://github.com/gwen0x4c3/ego-bridge/releases/tag/v2.4.0

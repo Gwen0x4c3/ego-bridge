@@ -28,7 +28,7 @@ case "${1:-}" in
   linux)
     NAME="ego-bridge-$TAG-linux.tar.gz"
     tar --exclude='__pycache__' --exclude='*.pyc' -czf "$OUT/$NAME" -C "$ROOT" \
-      linux skills docs README.md LICENSE VERSION CHANGELOG.md CONTRIBUTING.md SECURITY.md
+      linux skills docs README.md README.zh-CN.md LICENSE VERSION CHANGELOG.md CONTRIBUTING.md SECURITY.md
     ;;
   *) echo "Usage: bash scripts/package-release.sh macos|linux" >&2; exit 2 ;;
 esac

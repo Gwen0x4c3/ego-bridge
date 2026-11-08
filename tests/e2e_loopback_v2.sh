@@ -42,7 +42,7 @@ if ! grep -q '"ev": "listening"' "$WORK/svc.log"; then
 fi
 
 # 2) shim 生成配对码
-CODE=$("$SHIM" pair | head -1 | awk '{print $2}')
+CODE=$("$SHIM" pair --json | python3 -c 'import json,sys; print(json.load(sys.stdin)["code"])')
 [[ "$CODE" =~ ^[a-z2-9]{4}-[a-z2-9]{4}$ ]] && { PASS=$((PASS+1)); echo "PASS  pair-code($CODE)"; } || { FAIL=$((FAIL+1)); echo "FAIL  pair-code($CODE)"; }
 
 # 3) 启动 core（stdin 用 FIFO 驱动）
@@ -67,6 +67,11 @@ wait_status() { wait_status_from 0 "$1" "${2:-10}"; }
 M=$(mark_line)
 send "{\"cmd\":\"pair\",\"host\":\"127.0.0.1\",\"port\":$PORT,\"code\":\"$CODE\"}"
 if wait_status_from $M connected 15; then PASS=$((PASS+1)); echo "PASS  pair-connected"; else FAIL=$((FAIL+1)); echo "FAIL  pair-connected"; tail -3 "$WORK/core.out"; fi
+
+JSON_STATUS=$("$SHIM" bridge status --json)
+if echo "$JSON_STATUS" | python3 -c 'import json,sys; assert json.load(sys.stdin)["uplink"]'; then
+  PASS=$((PASS+1)); echo "PASS  machine-readable-pair-and-status"
+else FAIL=$((FAIL+1)); echo "FAIL  machine-readable-pair-and-status"; fi
 
 # 5) shim 透传：--version / skill / nodejs
 V=$("$SHIM" --version 2>&1 | head -1)
